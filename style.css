@@ -18,7 +18,16 @@
 body { margin: 0; overflow: hidden; background-color: var(--bg-body); color: var(--text-main); font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, sans-serif; }
 #app-layout { display: flex; width: 100vw; height: 100vh; overflow: hidden; transition: all 0.3s ease; }
 #canvas-wrapper { flex: 1; display: flex; align-items: center; justify-content: center; background-color: var(--bg-canvas); position: relative; transition: all 0.3s ease; }
-#main-canvas { width: 100%; max-width: 85vh; aspect-ratio: 1 / 1; box-shadow: 0 20px 50px rgba(0,0,0,0.1); border-radius: 4px; transition: background 0.3s; cursor: grab; }
+
+#main-canvas { 
+    width: min(90%, 80vh); 
+    height: min(90%, 80vh); 
+    aspect-ratio: 1 / 1; 
+    box-shadow: 0 20px 50px rgba(0,0,0,0.1); 
+    border-radius: 4px; 
+    transition: background 0.3s; 
+    cursor: grab; 
+}
 #main-canvas:active { cursor: grabbing; }
 
 .bg-checker {
@@ -34,8 +43,21 @@ body { margin: 0; overflow: hidden; background-color: var(--bg-body); color: var
 #ui-panel::-webkit-scrollbar-track { background: transparent; }
 
 /* 탭 UI */
-.tabs { display: flex; border-bottom: 2px solid var(--border-color); }
-.tab-btn { flex: 1; padding: 12px 0; border: none; background: transparent; cursor: pointer; font-weight: 700; font-size: 14px; color: var(--text-muted); border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.2s; box-shadow: none; border-radius: 0; }
+.tabs { 
+    display: flex; 
+    border-bottom: 2px solid var(--border-color); 
+    flex-wrap: nowrap; 
+    overflow-x: auto; 
+    -webkit-overflow-scrolling: touch; 
+    scrollbar-width: none; /* Firefox */
+}
+.tabs::-webkit-scrollbar { display: none; } /* Chrome, Safari */
+
+.tab-btn { 
+    flex: 1 0 auto;
+    padding: 12px 16px; 
+    border: none; background: transparent; cursor: pointer; font-weight: 700; font-size: 14px; color: var(--text-muted); border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.2s; box-shadow: none; border-radius: 0; white-space: nowrap; 
+}
 .tab-btn.active { color: var(--primary); border-bottom: 2px solid var(--primary); }
 .tab-btn:hover:not(.active) { color: var(--text-main); transform: none; box-shadow: none; }
 .tab-content { display: none; flex-direction: column; gap: 16px; animation: fadeIn 0.3s ease; }
@@ -105,13 +127,19 @@ button:disabled { opacity: 0.6; cursor: not-allowed; box-shadow: none; transform
     white-space: nowrap;
 }
 
-/* 📱 모바일 및 자이로스코프 모드 전용 UI 레이아웃 */
+/* 모바일 및 자이로스코프 모드 전용 UI 레이아웃 */
 @media (max-width: 768px) {
     #app-layout { flex-direction: column; }
-    #canvas-wrapper { min-height: 40vh; flex: 1; }
-    #ui-panel { width: 100%; flex: 1; border-top: 1px solid var(--border-color); }
-    .tabs { overflow-x: auto; white-space: nowrap; }
-    #main-canvas { max-width: 90vw; max-height: 40vh; }
+    #canvas-wrapper { flex: none; height: 45vh; min-height: 45vh; } /* 캔버스 영역 고정 */
+    #ui-panel { width: 100%; flex: 1; height: 55vh; border-top: 1px solid var(--border-color); padding: 15px; } /* 패널 스크롤 영역 확보 */
+    
+    /* 모바일에서는 찌그러지지 않게 완벽한 비율 강제 (화면 너비나 높이 중 짧은 것에 맞춤) */
+    #main-canvas { 
+        width: min(90vw, 40vh); 
+        height: min(90vw, 40vh); 
+        aspect-ratio: 1 / 1;
+        max-width: 100%; max-height: 100%;
+    }
 }
 
 #app-layout.gyro-mode #ui-panel { display: none !important; }

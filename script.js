@@ -306,7 +306,7 @@ function createShapeFromImage(img, expandPx, maxDim=500) {
     let minX=Infinity, maxX=-Infinity, minY=Infinity, maxY=-Infinity; points.forEach(p=>{ if(p.x<minX)minX=p.x; if(p.x>maxX)maxX=p.x; if(p.y<minY)minY=p.y; if(p.y>maxY)maxY=p.y; });
     const cx=(minX+maxX)/2, cy=(minY+maxY)/2;
     
-    const mappedPoints = points.map(p => ({ x: (p.x-cx)/scale, y: -(p.y-cy)/scale })); // 실제 3D 월드 좌표계 추출
+    const mappedPoints = points.map(p => ({ x: (p.x-cx)/scale, y: -(p.y-cy)/scale }));
     
     const shape = new THREE.Shape(); 
     shape.moveTo(mappedPoints[0].x, mappedPoints[0].y);
@@ -319,7 +319,7 @@ function createShapeFromImage(img, expandPx, maxDim=500) {
     };
 }
 
-// 재질 생성 유틸 (렌더 오더 및 알파 테스트로 글리치 완전 해결)
+// 재질 생성 유틸
 function getMaterial(texture, isGlossy) {
     return isGlossy ? new THREE.MeshPhongMaterial({ map: texture, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5, shininess: 100, specular: 0xffffff })
                     : new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
@@ -338,7 +338,6 @@ function resetCamera() {
     camera.position.set(0, center.y, cameraDist); controls.target.set(0, center.y, 0); controls.update();
 }
 document.getElementById('btnResetCamera').addEventListener('click', resetCamera);
-
 
 // --- 자이로스코프(기울기) 및 흔들기 제어 ---
 let shakeForceX = 0, shakeForceY = 0;
