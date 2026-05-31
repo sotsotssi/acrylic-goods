@@ -306,7 +306,7 @@ function createShapeFromImage(img, expandPx, maxDim=500) {
     let minX=Infinity, maxX=-Infinity, minY=Infinity, maxY=-Infinity; points.forEach(p=>{ if(p.x<minX)minX=p.x; if(p.x>maxX)maxX=p.x; if(p.y<minY)minY=p.y; if(p.y>maxY)maxY=p.y; });
     const cx=(minX+maxX)/2, cy=(minY+maxY)/2;
     
-    const mappedPoints = points.map(p => ({ x: (p.x-cx)/scale, y: -(p.y-cy)/scale }));
+    const mappedPoints = points.map(p => ({ x: (p.x-cx)/scale, y: -(p.y-cy)/scale })); // 실제 3D 월드 좌표계 추출
     
     const shape = new THREE.Shape(); 
     shape.moveTo(mappedPoints[0].x, mappedPoints[0].y);
@@ -319,7 +319,7 @@ function createShapeFromImage(img, expandPx, maxDim=500) {
     };
 }
 
-// 재질 생성 유틸
+// 재질 생성 유틸 (렌더 오더 및 알파 테스트로 글리치 완전 해결)
 function getMaterial(texture, isGlossy) {
     return isGlossy ? new THREE.MeshPhongMaterial({ map: texture, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5, shininess: 100, specular: 0xffffff })
                     : new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
@@ -338,6 +338,7 @@ function resetCamera() {
     camera.position.set(0, center.y, cameraDist); controls.target.set(0, center.y, 0); controls.update();
 }
 document.getElementById('btnResetCamera').addEventListener('click', resetCamera);
+
 
 // --- 자이로스코프(기울기) 및 흔들기 제어 ---
 let shakeForceX = 0, shakeForceY = 0;
@@ -518,7 +519,7 @@ function generateStand() {
     }, 100);
 }
 
-// 2. 아크릴 쉐이커 로직 (물리 엔진 적용 - 다각형 외곽선 물리 충돌 완벽 구현)
+// 2. 아크릴 쉐이커 로직
 function generateShaker() {
     const bgType = document.getElementById('shakerBgType').value;
     if(bgType === 'image' && !shakerBgImg) return alert('쉐이커 배경 이미지를 올려주세요.');
@@ -823,23 +824,86 @@ function unlockExports() {
 
 document.getElementById('btnExportVideo').addEventListener('click', () => {
     if (!pivotContainer) return;
-    showLoading('영상을 녹화 중입니다...');
+    showLoading('영상을 녹화 중입니다... (약 3~4초)');
+    
     const origSpeed = document.getElementById('rotationSpeed').value;
-    if(origSpeed === "0" && currentTab !== 'shaker') { document.getElementById('rotationSpeed').value = 0; pivotContainer.rotation.y = 0; }
-    const stream = canvasEl.captureStream(30);
-    const mime = document.getElementById('bgTransparent').checked && MediaRecorder.isTypeSupported('video/webm; codecs=vp9') ? 'video/webm; codecs=vp9' : 'video/webm';
-    let rec; try{rec=new MediaRecorder(stream,{mimeType:mime});}catch(e){rec=new MediaRecorder(stream);}
-    const chunks = []; rec.ondataavailable=e=>{if(e.data.size>0)chunks.push(e.data);};
-    rec.onstop = () => {
-        const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(chunks,{type:mime})); a.download='acrylic-goods.webm'; a.click();
-        document.getElementById('rotationSpeed').value = origSpeed; hideLoading();
-    };
-    const totalFrames = 90; let frame=0; rec.start(100);
-    function recordFrame() {
-        if(frame<=totalFrames) { if(origSpeed==="0" && currentTab!=='shaker') pivotContainer.rotation.y = (frame/totalFrames)*Math.PI*2; frame++; requestAnimationFrame(recordFrame); }
-        else rec.stop();
+    if(origSpeed === "0" && currentTab !== 'shaker') { 
+        document.getElementById('rotationSpeed').value = 0; 
+        pivotContainer.rotation.y = 0;
     }
-    recordFrame();
+    
+    // 1. 강제 초기 렌더링으로 캔버스 버퍼 확보
+    renderer.clear(); 
+    renderer.render(scene, camera); 
+    renderer.clearDepth(); 
+    renderer.render(uiScene, uiCamera);
+
+    // 2. 스트림 캡처 및 MIME 타입 설정
+    const stream = canvasEl.captureStream(30);
+    const isTransparent = document.getElementById('bgTransparent').checked;
+    let mimeType = 'video/webm';
+    if (isTransparent && MediaRecorder.isTypeSupported('video/webm; codecs=vp9')) {
+        mimeType = 'video/webm; codecs=vp9';
+    }
+    
+    let recorder;
+    try { recorder = new MediaRecorder(stream, { mimeType }); } 
+    catch(e) { recorder = new MediaRecorder(stream); }
+    
+    const chunks = [];
+    recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+    recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'acrylic-goods.webm'; a.click();
+        URL.revokeObjectURL(url);
+        document.getElementById('rotationSpeed').value = origSpeed;
+        hideLoading();
+    };
+
+    const totalFrames = 120; let frame = 0;
+    recorder.start(); 
+    
+    function recordFrame() {
+        if (frame <= totalFrames) {
+            pivotContainer.rotation.y = (frame / totalFrames) * Math.PI * 2;
+           
+            if (pivotContainer) pivotContainer.updateMatrixWorld(true);
+
+            // 분리 모드일 때 앞뒷면 표시 전환 로직 적용
+            if (pivotContainer && pivotContainer.userData.mode === 'separate' && pivotContainer.userData.backGroup) {
+                const cameraPos = new THREE.Vector3(); camera.getWorldPosition(cameraPos);
+                const centerPos = new THREE.Vector3(); pivotContainer.getWorldPosition(centerPos);
+                const viewVector = cameraPos.sub(centerPos).normalize();
+                const forwardVector = new THREE.Vector3(0, 0, 1).applyQuaternion(pivotContainer.quaternion);
+                
+                if (forwardVector.dot(viewVector) >= 0) {
+                    pivotContainer.userData.frontGroup.visible = true;
+                    pivotContainer.userData.backGroup.visible = false;
+                } else {
+                    pivotContainer.userData.frontGroup.visible = false;
+                    pivotContainer.userData.backGroup.visible = true;
+                }
+            }
+            renderer.clear();
+            renderer.render(scene, camera);
+            renderer.clearDepth();
+            renderer.render(uiScene, uiCamera);
+            
+            frame++; 
+            requestAnimationFrame(recordFrame); 
+        } else {
+            setTimeout(() => {
+                if(recorder.state === 'recording') {
+                    recorder.requestData(); 
+                    recorder.stop();
+                }
+            }, 1000);
+        }
+    }
+    
+    setTimeout(recordFrame, 50);
 });
 
 document.getElementById('btnExportAPNG').addEventListener('click', async () => {
