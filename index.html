@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>사이버 아크릴 굿즈 공방 #쁏크릴</title>
+    <!-- Three.js (r128) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- OrbitControls -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- GLTFExporter -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js"></script>
+    <!-- Cannon.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+    <!-- GIF.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js"></script>
+    <!-- UPNG.js & Pako -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/upng-js@2.1.0/UPNG.min.js"></script>
+    <!-- 스타일 -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app-layout">
+    <div id="canvas-wrapper">
+        <canvas id="main-canvas" width="800" height="800" title="마우스로 드래그하여 회전하거나 흔들 수 있습니다."></canvas>
+        <button id="btnExitGyro" class="btn-primary">🔙 편집 모드로 돌아가기</button>
+        <div id="loading-overlay">
+            <div class="spinner"></div>
+            <p id="loading-text" class="loading-text">처리 중입니다...</p>
+        </div>
+    </div>
+
+    <div id="ui-panel">
+        <div>
+            <h1 class="header-title">
+                <div style="display: flex; align-items: center;">
+                    사이버 아크릴 굿즈 공방 #쁏크릴
+                    <button id="btnLicenseInfo" class="btn-info" title="오픈소스 라이선스">i</button>
+                </div>
+            </h1>
+            <span class="text-muted">스탠드, 쉐이커, 디오라마를 웹에서 만들어보세요.</span>
+        </div>
+
+        <!-- 탭 메뉴 -->
+        <div class="tabs">
+            <button class="tab-btn active" data-target="tab-stand">아크릴 스탠드</button>
+            <button class="tab-btn" data-target="tab-shaker">아크릴 쉐이커</button>
+            <button class="tab-btn" data-target="tab-diorama">아크릴 디오라마</button>
+        </div>
+
+        <!-- 공통 설정 (상단 배치) -->
+        <div class="control-group panel-box" style="padding: 12px 16px;">
+            <div class="flex gap-4 items-center" style="justify-content: space-between;">
+                <label style="margin:0;">배경색/투명도</label>
+                <div class="flex gap-2 items-center">
+                    <input type="color" id="bgColor" value="#eef1f5">
+                    <input type="checkbox" id="bgTransparent" title="투명 배경">
+                </div>
+                <div class="flex-1 text-right">
+                    <button id="btnResetCamera" class="btn-gray" style="padding: 6px 10px; width: auto; display: inline-flex; font-size:12px;">카메라 리셋</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 1. 아크릴 스탠드 패널 -->
+        <div id="tab-stand" class="tab-content active">
+            <div class="control-group">
+                <label>앞면 이미지 (PNG)</label>
+                <input type="file" id="standFrontInput" accept="image/png">
+            </div>
+            <div class="control-group">
+                <label>뒷면 이미지 (선택, PNG)</label>
+                <div class="flex gap-2 items-center">
+                    <input type="file" id="standBackInput" accept="image/png">
+                    <button class="btn-danger btn-clear" data-target="standBackInput">제거</button>
+                </div>
+            </div>
+            <div class="flex gap-4">
+                <div class="control-group flex-1">
+                    <label>외곽선 모드</label>
+                    <select id="contourMode">
+                        <option value="unified">앞면 외곽선 통합</option>
+                        <option value="separate">앞/뒷면 분리</option>
+                    </select>
+                </div>
+                <div class="control-group flex-1">
+                    <label>스탠드 옵션</label>
+                    <select id="pivotType">
+                        <option value="bottom">받침대 추가</option>
+                        <option value="center">이미지만</option>
+                    </select>
+                </div>
+            </div>
+            <!-- 받침대 옵션 -->
+            <div id="baseOptionsPanel" class="control-group panel-box bg-gray-50">
+                <label>받침대 설정</label>
+                <div class="flex gap-2 mb-2">
+                    <select id="baseShapeType" class="flex-1">
+                        <option value="circle">원형</option>
+                        <option value="square">사각형</option>
+                        <option value="contour">이미지 맞춤</option>
+                    </select>
+                </div>
+                <div id="baseSizeContainer">
+                    <span class="text-muted">크기: <span id="valBaseSize">150</span>px</span>
+                    <input type="range" id="baseSize" min="50" max="400" value="150">
+                </div>
+                <span class="text-muted mb-2">바닥 이미지 (선택)</span>
+                <div class="flex gap-2 items-center">
+                    <input type="file" id="standBaseInput" accept="image/png">
+                    <button class="btn-danger btn-clear" data-target="standBaseInput">제거</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. 아크릴 쉐이커 패널 -->
+        <div id="tab-shaker" class="tab-content">
+            <div class="panel-box bg-gray-50">
+                <span class="text-muted text-warning mb-2" style="font-size:12px;">※ 마우스로 화면을 빠르게 드래그하거나 폰을 기울여서 파츠를 쏟아지게 할 수 있습니다!</span>
+                
+                <div class="control-group mb-2">
+                    <button id="btnEnableGyro" class="btn-blue" style="padding: 8px 12px; font-size: 13px;">자이로스코프 활성화 (모바일)</button>
+                </div>
+
+                <div class="control-group mb-2 mt-2">
+                    <label>쉐이커 틀 모양</label>
+                    <select id="shakerBgType">
+                        <option value="circle">원형</option>
+                        <option value="square">사각형</option>
+                        <option value="image">이미지 기준 틀 생성</option>
+                    </select>
+                </div>
+
+                <div class="control-group mb-2" id="shakerBgImageUploadWrap">
+                    <label>쉐이커 배경 이미지</label>
+                    <input type="file" id="shakerBgInput" accept="image/png">
+                </div>
+                
+                <div class="control-group mb-2" id="shakerBgSizeWrap" style="display:none;">
+                    <span class="text-muted">틀 전체 크기: <span id="valShakerBgSize">200</span>px</span>
+                    <input type="range" id="shakerBgSize" min="100" max="400" value="200">
+                </div>
+                <div class="control-group mt-2">
+                    <label>내부 여백 (물리 충돌 영역 조정): <span id="valShakerArea">85</span>%</label>
+                    <input type="range" id="shakerAreaRatio" min="40" max="100" value="85">
+                    <span class="text-muted">수치가 낮을수록 파츠가 밖으로 나가지 않습니다.</span>
+                </div>
+            </div>
+            
+            <div class="control-group">
+                <div class="flex items-center" style="justify-content: space-between; margin-bottom: 8px;">
+                    <label style="margin:0;">내부 쉐이커 파츠들</label>
+                    <button id="btnAddShakerPart" class="btn-gray" style="padding: 4px 12px; width: auto; font-size: 12px;">+ 파츠 추가</button>
+                </div>
+                <span class="text-muted mb-2">※ 목록의 ☰ 아이콘을 드래그하여 순서를 변경할 수 있습니다.</span>
+                <div id="shaker-parts-list" class="flex flex-col gap-2">
+                    <!-- 파츠 UI 동적 생성 -->
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. 디오라마 패널 -->
+        <div id="tab-diorama" class="tab-content">
+            <div class="control-group panel-box bg-gray-50">
+                <label>디오라마 전반 설정</label>
+                <span class="text-muted mb-2">바닥 받침대 마진 (자동 계산 크기 + 여백): <span id="valDioramaBaseMargin">30</span>px</span>
+                <input type="range" id="dioramaBaseMargin" min="0" max="100" value="30">
+                <span class="text-muted mb-2 mt-2">레이어 간격 (Z-깊이): <span id="valDioramaGap">40</span>px</span>
+                <input type="range" id="dioramaGap" min="10" max="150" value="40">
+            </div>
+
+            <div class="control-group">
+                <div class="flex items-center" style="justify-content: space-between; margin-bottom: 8px;">
+                    <label style="margin:0;">디오라마 레이어 목록</label>
+                    <button id="btnAddDioramaLayer" class="btn-gray" style="padding: 4px 12px; width: auto; font-size: 12px;">+ 레이어 추가</button>
+                </div>
+                <span class="text-muted mb-2">※ 위에서부터 아래로 [배경 → 전경] 순으로 배치됩니다. ☰ 아이콘으로 순서 변경 가능.</span>
+                <div id="diorama-layers-list" class="flex flex-col gap-2">
+                    <!-- 레이어 UI 동적 생성 -->
+                </div>
+            </div>
+        </div>
+
+        <hr>
+
+        <!-- 아크릴 세부 옵션 & 조명 (공통) -->
+        <div class="flex gap-4">
+            <div class="control-group flex-1">
+                <label>아크릴 두께: <span id="valThickness">20</span>px</label>
+                <input type="range" id="thickness" min="5" max="50" value="20">
+            </div>
+            <div class="control-group flex-1">
+                <label>외곽 여백: <span id="valMargin">15</span>px</label>
+                <input type="range" id="margin" min="0" max="50" value="15">
+            </div>
+        </div>
+        <div class="control-group">
+            <label>표면 질감</label>
+            <select id="textureType">
+                <option value="glossy">유광</option>
+                <option value="matte">무광</option>
+            </select>
+        </div>
+
+        <div class="control-group panel-box">
+            <div class="flex items-center" style="justify-content: space-between;">
+                <label style="margin: 0;">조명 설정</label>
+                <button id="btnResetLight" class="btn-gray" style="width: auto; padding: 4px 8px; font-size: 11px;">초기화</button>
+            </div>
+            <div class="flex gap-4 items-center mt-2">
+                <div id="lightControlPad" class="light-pad" title="드래그하여 조명 변경"><div id="lightHandle" class="light-handle"></div></div>
+                <div class="flex-1">
+                    <label class="text-muted">주 조명 (입체감)</label>
+                    <input type="range" id="lightIntensity" min="0" max="2" step="0.1" value="0.5">
+                    <label class="text-muted mt-2">주변광 (그림자 밝기)</label>
+                    <input type="range" id="ambientIntensity" min="0" max="2" step="0.1" value="0.6">
+                </div>
+            </div>
+        </div>
+
+        <hr>
+        
+        <button id="btnGenerate" class="btn-primary" style="font-size: 16px; padding: 14px;">입체 굿즈 생성 및 갱신</button>
+
+        <div class="control-group mt-2">
+            <label>자동 회전 속도</label>
+            <input type="range" id="rotationSpeed" min="0" max="10" value="0">
+        </div>
+        
+        <div class="control-group gap-2 mt-2">
+            <button id="btnExportVideo" class="btn-green" disabled>WebM 영상 저장</button>
+            <button id="btnExportAPNG" class="btn-blue" disabled>APNG 저장</button>
+            <button id="btnExportGIF" class="btn-purple" disabled>GIF 저장</button>
+            <button id="btnExportGLTF" class="btn-yellow" disabled>3D 모델 (.glb) 저장</button>
+        </div>
+    </div>
+
+    <!-- 라이선스 모달 -->
+    <div id="licenseModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 style="margin: 0; font-size: 16px; color: var(--text-main);">오픈소스 라이선스</h2>
+                <button id="btnCloseModal" class="btn-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="margin-top:0;">본 프로그램은 다음의 오픈소스 라이브러리를 사용하고 있습니다.</p>
+                <div class="license-item">
+                    <strong>Three.js</strong> (MIT License)<br>Copyright © 2010-2023 three.js authors
+                </div>
+                <div class="license-item">
+                    <strong>OrbitControls</strong> (MIT License)<br>Copyright © 2010-2023 three.js authors
+                </div>
+                <div class="license-item">
+                    <strong>GLTFExporter</strong> (MIT License)<br>Copyright © 2010-2023 three.js authors
+                </div>
+                <div class="license-item">
+                    <strong>Cannon.js</strong> (MIT License)<br>Copyright © 2012 Stefan Hedman
+                </div>
+                <div class="license-item">
+                    <strong>GIF.js</strong> (MIT License)<br>Copyright © 2013 Johan Nordberg
+                </div>
+                <div class="license-item">
+                    <strong>UPNG.js</strong> (MIT License)<br>Copyright © 2017 Photopea
+                </div>
+                <div class="license-item">
+                    <strong>Pako</strong> (MIT License)<br>Copyright © 2014-2017 Vitaly Puzrin and Andrey Tupitsin
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
