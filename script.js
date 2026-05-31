@@ -4,6 +4,12 @@ const canvasEl = document.getElementById('main-canvas');
 const overlay = document.getElementById('loading-overlay');
 const loadingText = document.getElementById('loading-text');
 
+// WebM 비디오 버튼 숨김 처리
+const btnExportVideo = document.getElementById('btnExportVideo');
+if (btnExportVideo) {
+    btnExportVideo.style.display = 'none';
+}
+
 // --- Three.js & Cannon.js 글로벌 설정 ---
 const scene = new THREE.Scene();
 const renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: true, preserveDrawingBuffer: true, alpha: true, logarithmicDepthBuffer: true });
@@ -753,20 +759,35 @@ function generateDiorama() {
 }
 
 // --- 공통 애니메이션 & 렌더링 루프 ---
-function animate() {
+let lastTime = performance.now();
+
+function animate(time) {
     requestAnimationFrame(animate);
+    if (!time) time = performance.now();
+    const dt = time - lastTime;
+    lastTime = time;
+
     controls.update();
 
-    const speed = parseInt(document.getElementById('rotationSpeed').value);
-    if (pivotContainer && speed > 0) pivotContainer.rotation.y += speed * 0.01;
+    if (pivotContainer) {
+        const speed = parseInt(document.getElementById('rotationSpeed').value);
+        if (speed > 0) pivotContainer.rotation.y += speed * 0.01;
 
-    if (pivotContainer && pivotContainer.userData.mode === 'separate' && pivotContainer.userData.backGroup) {
-        const camPos = new THREE.Vector3(); camera.getWorldPosition(camPos);
-        const centerPos = new THREE.Vector3(); pivotContainer.getWorldPosition(centerPos);
-        const viewVec = camPos.sub(centerPos).normalize();
-        const fwdVec = new THREE.Vector3(0,0,1).applyQuaternion(pivotContainer.quaternion);
-        if (fwdVec.dot(viewVec) >= 0) { pivotContainer.userData.frontGroup.visible = true; pivotContainer.userData.backGroup.visible = false; }
-        else { pivotContainer.userData.frontGroup.visible = false; pivotContainer.userData.backGroup.visible = true; }
+        pivotContainer.updateMatrixWorld(true);
+
+        if (pivotContainer.userData.mode === 'separate' && pivotContainer.userData.backGroup) {
+            const camPos = new THREE.Vector3(); camera.getWorldPosition(camPos);
+            const centerPos = new THREE.Vector3(); pivotContainer.getWorldPosition(centerPos);
+            const viewVec = camPos.sub(centerPos).normalize();
+            const fwdVec = new THREE.Vector3(0,0,1).applyQuaternion(pivotContainer.quaternion);
+            if (fwdVec.dot(viewVec) >= 0) { 
+                pivotContainer.userData.frontGroup.visible = true; 
+                pivotContainer.userData.backGroup.visible = false; 
+            } else { 
+                pivotContainer.userData.frontGroup.visible = false; 
+                pivotContainer.userData.backGroup.visible = true; 
+            }
+        }
     }
 
     if (physicsWorld && currentTab === 'shaker' && pivotContainer) {
@@ -816,116 +837,58 @@ animate();
 
 // --- Export 기능 ---
 function unlockExports() {
-    document.getElementById('btnExportVideo').disabled = false;
+    // 버튼이 제거되었으므로 Video 비활성화 해제 로직 제외
     document.getElementById('btnExportAPNG').disabled = false;
     document.getElementById('btnExportGIF').disabled = false;
     document.getElementById('btnExportGLTF').disabled = false;
 }
 
-document.getElementById('btnExportVideo').addEventListener('click', () => {
-    if (!pivotContainer) return;
-    showLoading('영상을 녹화 중입니다... (약 3~4초)');
-    
-    const origSpeed = document.getElementById('rotationSpeed').value;
-    if(origSpeed === "0" && currentTab !== 'shaker') { 
-        document.getElementById('rotationSpeed').value = 0; 
-        pivotContainer.rotation.y = 0;
-    }
-    
-    // 1. 강제 초기 렌더링으로 캔버스 버퍼 확보
-    renderer.clear(); 
-    renderer.render(scene, camera); 
-    renderer.clearDepth(); 
-    renderer.render(uiScene, uiCamera);
-
-    // 2. 스트림 캡처 및 MIME 타입 설정
-    const stream = canvasEl.captureStream(30);
-    const isTransparent = document.getElementById('bgTransparent').checked;
-    let mimeType = 'video/webm';
-    if (isTransparent && MediaRecorder.isTypeSupported('video/webm; codecs=vp9')) {
-        mimeType = 'video/webm; codecs=vp9';
-    }
-    
-    let recorder;
-    try { recorder = new MediaRecorder(stream, { mimeType }); } 
-    catch(e) { recorder = new MediaRecorder(stream); }
-    
-    const chunks = [];
-    recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-    recorder.onstop = () => {
-        const blob = new Blob(chunks, { type: mimeType });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = 'acrylic-goods.webm'; a.click();
-        URL.revokeObjectURL(url);
-        document.getElementById('rotationSpeed').value = origSpeed;
-        hideLoading();
-    };
-
-    const totalFrames = 120; let frame = 0;
-    recorder.start(); 
-    
-    function recordFrame() {
-        if (frame <= totalFrames) {
-            pivotContainer.rotation.y = (frame / totalFrames) * Math.PI * 2;
-           
-            if (pivotContainer) pivotContainer.updateMatrixWorld(true);
-
-            // 분리 모드일 때 앞뒷면 표시 전환 로직 적용
-            if (pivotContainer && pivotContainer.userData.mode === 'separate' && pivotContainer.userData.backGroup) {
-                const cameraPos = new THREE.Vector3(); camera.getWorldPosition(cameraPos);
-                const centerPos = new THREE.Vector3(); pivotContainer.getWorldPosition(centerPos);
-                const viewVector = cameraPos.sub(centerPos).normalize();
-                const forwardVector = new THREE.Vector3(0, 0, 1).applyQuaternion(pivotContainer.quaternion);
-                
-                if (forwardVector.dot(viewVector) >= 0) {
-                    pivotContainer.userData.frontGroup.visible = true;
-                    pivotContainer.userData.backGroup.visible = false;
-                } else {
-                    pivotContainer.userData.frontGroup.visible = false;
-                    pivotContainer.userData.backGroup.visible = true;
-                }
-            }
-            renderer.clear();
-            renderer.render(scene, camera);
-            renderer.clearDepth();
-            renderer.render(uiScene, uiCamera);
-            
-            frame++; 
-            requestAnimationFrame(recordFrame); 
-        } else {
-            setTimeout(() => {
-                if(recorder.state === 'recording') {
-                    recorder.requestData(); 
-                    recorder.stop();
-                }
-            }, 1000);
-        }
-    }
-    
-    setTimeout(recordFrame, 50);
-});
-
 document.getElementById('btnExportAPNG').addEventListener('click', async () => {
     if (!pivotContainer || typeof UPNG === 'undefined') return;
-    showLoading('APNG 프레임을 캡처 중입니다...');
-    const origSpeed = document.getElementById('rotationSpeed').value;
-    if(origSpeed === "0" && currentTab !== 'shaker') { document.getElementById('rotationSpeed').value = 0; pivotContainer.rotation.y = 0; }
+    
+    const origSpeedStr = document.getElementById('rotationSpeed').value;
+    const origSpeed = parseFloat(origSpeedStr);
+    document.getElementById('rotationSpeed').value = 0;
+    
+    // 사용자가 설정한 속도를 바탕으로 소요 시간 도출
+    let recSpeed = origSpeed > 0 ? origSpeed : 4; 
+    const durationSec = currentTab === 'shaker' ? 3.0 : ((Math.PI * 2) / (recSpeed * 0.6));
+    
+    // 20프레임 주기로 유동적 프레임 수 생성 (속도가 느릴수록 장수가 많아짐)
+    const totalFrames = currentTab === 'shaker' ? 60 : Math.round(durationSec * 20); 
+    const frameDelay = 50; // 고정 딜레이 (50ms = 20 FPS)
+
+    showLoading(`APNG 프레임을 캡처 중입니다... (총 ${totalFrames}프레임)`);
+    
     const isTrans = document.getElementById('bgTransparent').checked;
     
     const frames = []; const delays = [];
     const tempCanvas = document.createElement('canvas'); tempCanvas.width = CANVAS_SIZE; tempCanvas.height = CANVAS_SIZE;
     const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
-    const totalFrames = 45;
 
     for(let frame = 0; frame < totalFrames; frame++) {
-        if(origSpeed==="0" && currentTab!=='shaker') pivotContainer.rotation.y = (frame / totalFrames) * Math.PI * 2;
+        if(currentTab === 'shaker') {
+            pivotContainer.rotation.z = Math.sin((frame / totalFrames) * Math.PI * 4) * (Math.PI / 4);
+        } else {
+            pivotContainer.rotation.y = (frame / totalFrames) * Math.PI * 2;
+        }
+        
+        if (pivotContainer) pivotContainer.updateMatrixWorld(true);
+        if (pivotContainer && pivotContainer.userData.mode === 'separate' && pivotContainer.userData.backGroup) {
+            const camPos = new THREE.Vector3(); camera.getWorldPosition(camPos);
+            const centerPos = new THREE.Vector3(); pivotContainer.getWorldPosition(centerPos);
+            const viewVec = camPos.sub(centerPos).normalize();
+            const fwdVec = new THREE.Vector3(0,0,1).applyQuaternion(pivotContainer.quaternion);
+            if (fwdVec.dot(viewVec) >= 0) { pivotContainer.userData.frontGroup.visible = true; pivotContainer.userData.backGroup.visible = false; }
+            else { pivotContainer.userData.frontGroup.visible = false; pivotContainer.userData.backGroup.visible = true; }
+        }
+
         if (isTrans) renderer.setClearColor(0x000000, 0);
         renderer.clear(); renderer.render(scene, camera); renderer.clearDepth(); renderer.render(uiScene, uiCamera);
         
         tempCtx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE); tempCtx.drawImage(canvasEl, 0, 0);
         frames.push(tempCtx.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE).data.buffer);
-        delays.push(60);
+        delays.push(frameDelay);
         await new Promise(resolve => requestAnimationFrame(resolve));
     }
 
@@ -935,36 +898,67 @@ document.getElementById('btnExportAPNG').addEventListener('click', async () => {
             const apngBuffer = UPNG.encode(frames, CANVAS_SIZE, CANVAS_SIZE, 0, delays);
             const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([apngBuffer], { type: 'image/apng' })); a.download = 'acrylic-animated.png'; a.click();
         } catch (err) { alert("APNG 인코딩에 실패했습니다."); }
-        document.getElementById('rotationSpeed').value = origSpeed; updateBackground(); hideLoading();
+        if (pivotContainer) { pivotContainer.rotation.y = 0; pivotContainer.rotation.z = 0; }
+        document.getElementById('rotationSpeed').value = origSpeedStr; updateBackground(); hideLoading();
     }, 100);
 });
 
 document.getElementById('btnExportGIF').addEventListener('click', () => {
     if (!pivotContainer) return;
-    showLoading('GIF를 생성 중입니다... 창을 닫지 마세요.');
-    const origSpeed = document.getElementById('rotationSpeed').value;
-    if(origSpeed === "0" && currentTab !== 'shaker') pivotContainer.rotation.y = 0;
+
+    const origSpeedStr = document.getElementById('rotationSpeed').value;
+    const origSpeed = parseFloat(origSpeedStr);
+    document.getElementById('rotationSpeed').value = 0;
+    
+    let recSpeed = origSpeed > 0 ? origSpeed : 4; 
+    const durationSec = currentTab === 'shaker' ? 3.0 : ((Math.PI * 2) / (recSpeed * 0.6));
+    const totalFrames = currentTab === 'shaker' ? 60 : Math.round(durationSec * 20); 
+    const frameDelay = 50; 
+
+    showLoading(`GIF 생성 중... 창을 유지해 주세요.`);
+    
     const isTrans = document.getElementById('bgTransparent').checked;
     const workerBlob = new Blob([`importScripts('https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js');`], {type:'application/javascript'});
     const workerUrl = URL.createObjectURL(workerBlob);
     const gifOpt = {workers:2, quality:10, width:CANVAS_SIZE, height:CANVAS_SIZE, workerScript:workerUrl};
     if(isTrans) gifOpt.transparent = 0xFF00FF;
     const gif = new GIF(gifOpt);
-    const totalFrames = 45; let frame = 0;
+    
+    let frame = 0;
+    
     function addFrame() {
-        if(frame<totalFrames) {
-            if(origSpeed==="0" && currentTab!=='shaker') pivotContainer.rotation.y = (frame/totalFrames)*Math.PI*2;
+        if(frame < totalFrames) { 
+            if(currentTab === 'shaker') {
+                pivotContainer.rotation.z = Math.sin((frame / totalFrames) * Math.PI * 4) * (Math.PI / 4);
+            } else {
+                pivotContainer.rotation.y = (frame / totalFrames) * Math.PI * 2;
+            }
+            
+            if (pivotContainer) pivotContainer.updateMatrixWorld(true);
+            if (pivotContainer && pivotContainer.userData.mode === 'separate' && pivotContainer.userData.backGroup) {
+                const camPos = new THREE.Vector3(); camera.getWorldPosition(camPos);
+                const centerPos = new THREE.Vector3(); pivotContainer.getWorldPosition(centerPos);
+                const viewVec = camPos.sub(centerPos).normalize();
+                const fwdVec = new THREE.Vector3(0,0,1).applyQuaternion(pivotContainer.quaternion);
+                if (fwdVec.dot(viewVec) >= 0) { pivotContainer.userData.frontGroup.visible = true; pivotContainer.userData.backGroup.visible = false; }
+                else { pivotContainer.userData.frontGroup.visible = false; pivotContainer.userData.backGroup.visible = true; }
+            }
+
             if(isTrans) { renderer.setClearColor(0xFF00FF,1); scene.background=new THREE.Color(0xFF00FF); }
             renderer.clear(); renderer.render(scene, camera); renderer.clearDepth(); renderer.render(uiScene, uiCamera);
-            gif.addFrame(renderer.domElement, {copy:true, delay:60});
+            
+            gif.addFrame(renderer.domElement, {copy:true, delay: frameDelay});
             frame++; requestAnimationFrame(addFrame);
         } else {
-            loadingText.textContent = 'GIF 인코딩 중...'; updateBackground(); gif.render();
+            loadingText.textContent = 'GIF 인코딩 중... (시간이 걸릴 수 있습니다)'; 
+            updateBackground(); 
+            gif.render();
         }
     }
     gif.on('finished', blob => {
         const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download='acrylic-animated.gif'; a.click();
-        document.getElementById('rotationSpeed').value = origSpeed; hideLoading();
+        if (pivotContainer) { pivotContainer.rotation.y = 0; pivotContainer.rotation.z = 0; }
+        document.getElementById('rotationSpeed').value = origSpeedStr; hideLoading();
     });
     addFrame();
 });
