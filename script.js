@@ -239,12 +239,28 @@ function renderDioramaLayersUI() {
                 <input type="range" oninput="updateDioramaOffset(event, 'y', ${l.id})" min="-200" max="200" value="${l.offsetY}" class="flex-1 m-0">
                 <input type="number" oninput="updateDioramaOffsetSync(event, 'y', ${l.id})" value="${l.offsetY}"></div>
             </div>
+            <div class="flex gap-2 mt-2">
+                <div class="flex-1 flex items-center gap-2">
+                    <label class="text-muted m-0" style="white-space: nowrap;">수평 회전:</label>
+                    <button onclick="updateDioramaRotation(${l.id}, -90)" style="flex:1; padding:2px; border:1px solid var(--border-color); background:var(--bg-panel); border-radius:4px; cursor:pointer;">-90°</button>
+                    <span id="vRot${l.id}" style="width: 40px; text-align: center; font-size: 14px;">${l.rotationY || 0}°</span>
+                    <button onclick="updateDioramaRotation(${l.id}, 90)" style="flex:1; padding:2px; border:1px solid var(--border-color); background:var(--bg-panel); border-radius:4px; cursor:pointer;">+90°</button>
+                </div>
+            </div>
         `;
         list.appendChild(div);
     });
 }
 window.removeDioramaLayer = (id) => { dioramaLayers = dioramaLayers.filter(l => l.id !== id); renderDioramaLayersUI(); };
 window.updateDioramaFile = (e, id) => { fileToImage(e.target.files[0], img => { const lr = dioramaLayers.find(x => x.id === id); if(lr) lr.img = img; renderDioramaLayersUI(); }); };
+window.updateDioramaRotation = (id, delta) => { 
+    const lr = dioramaLayers.find(x => x.id === id); 
+    if(!lr) return;
+    lr.rotationY = ((lr.rotationY || 0) + delta) % 360;
+    if (lr.rotationY < 0) lr.rotationY += 360;
+    document.getElementById('vRot'+id).textContent = lr.rotationY + '°';
+    applyDioramaOffsets();
+};
 window.updateDioramaOffset = (e, axis, id) => { 
     const val = parseInt(e.target.value); const lr = dioramaLayers.find(x => x.id === id); 
     if(!lr) return;
@@ -265,10 +281,11 @@ function applyDioramaOffsets() {
         if(l.groupRef && l.basePos) {
             l.groupRef.position.x = l.basePos.x + l.offsetX;
             l.groupRef.position.y = l.basePos.y + l.offsetY;
+            l.groupRef.rotation.y = (l.rotationY || 0) * (Math.PI / 180);
         }
     });
 }
-document.getElementById('btnAddDioramaLayer').addEventListener('click', () => { dioramaLayers.push({ id: dioramaLayerIdCounter++, img: null, offsetX: 0, offsetY: 0, groupRef: null }); renderDioramaLayersUI(); });
+document.getElementById('btnAddDioramaLayer').addEventListener('click', () => { dioramaLayers.push({ id: dioramaLayerIdCounter++, img: null, offsetX: 0, offsetY: 0, rotationY: 0, groupRef: null }); renderDioramaLayersUI(); });
 
 
 // --- 형태 분석 알고리즘 (공통 핵심 코어) ---
@@ -734,6 +751,7 @@ function generateDiorama() {
                     
                     layer.basePos = { x: 0, y: -data.bounds.minY, z: zPos }; 
                     group.position.set(layer.basePos.x + layer.offsetX, layer.basePos.y + layer.offsetY, layer.basePos.z);
+                    group.rotation.y = (layer.rotationY || 0) * (Math.PI / 180);
                     
                     pivotContainer.add(group);
                     layer.groupRef = group;
@@ -835,6 +853,29 @@ function animate(time) {
 }
 animate();
 
+
+// --- 쉐이커 애니메이션 부드러운 정지/왕복 계산 함수 ---
+function getShakerAngle(progress) {
+    const max = Math.PI / 4; // 최대 회전각 (45도)
+    if (progress < 0.15) {
+        // 0 -> 오른쪽 45도 가속/감속 스윙
+        return max * (1 - Math.cos((progress / 0.15) * Math.PI)) / 2;
+    } else if (progress < 0.35) {
+        // 오른쪽 정점에서 파츠가 떨어지도록 멈춤 대기 (20% 시간)
+        return max;
+    } else if (progress < 0.65) {
+        // 오른쪽 45도 -> 왼쪽 -45도 반대편으로 빠르게 스윙
+        return max - (max * 2) * (1 - Math.cos(((progress - 0.35) / 0.30) * Math.PI)) / 2;
+    } else if (progress < 0.85) {
+        // 왼쪽 정점에서 파츠가 떨어지도록 멈춤 대기 (20% 시간)
+        return -max;
+    } else {
+        // 왼쪽 -45도 -> 0도 원위치 복귀
+        return -max + max * (1 - Math.cos(((progress - 0.85) / 0.15) * Math.PI)) / 2;
+    }
+}
+
+
 // --- Export 기능 ---
 function unlockExports() {
     // 버튼이 제거되었으므로 Video 비활성화 해제 로직 제외
@@ -867,10 +908,13 @@ document.getElementById('btnExportAPNG').addEventListener('click', async () => {
     const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
 
     for(let frame = 0; frame < totalFrames; frame++) {
+        
+        let p = frame / totalFrames;
         if(currentTab === 'shaker') {
-            pivotContainer.rotation.z = Math.sin((frame / totalFrames) * Math.PI * 4) * (Math.PI / 4);
+            // 커스텀 대기 애니메이션 적용
+            pivotContainer.rotation.z = getShakerAngle(p);
         } else {
-            pivotContainer.rotation.y = (frame / totalFrames) * Math.PI * 2;
+            pivotContainer.rotation.y = p * Math.PI * 2;
         }
         
         if (pivotContainer) pivotContainer.updateMatrixWorld(true);
@@ -928,10 +972,13 @@ document.getElementById('btnExportGIF').addEventListener('click', () => {
     
     function addFrame() {
         if(frame < totalFrames) { 
+            let p = frame / totalFrames;
+            
             if(currentTab === 'shaker') {
-                pivotContainer.rotation.z = Math.sin((frame / totalFrames) * Math.PI * 4) * (Math.PI / 4);
+                // 커스텀 대기 애니메이션 적용
+                pivotContainer.rotation.z = getShakerAngle(p);
             } else {
-                pivotContainer.rotation.y = (frame / totalFrames) * Math.PI * 2;
+                pivotContainer.rotation.y = p * Math.PI * 2;
             }
             
             if (pivotContainer) pivotContainer.updateMatrixWorld(true);
