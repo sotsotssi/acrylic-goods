@@ -854,25 +854,13 @@ function animate(time) {
 animate();
 
 
-// --- 쉐이커 애니메이션 부드러운 정지/왕복 계산 함수 ---
+// --- 쉐이커 애니메이션 ---
 function getShakerAngle(progress) {
-    const max = Math.PI / 4; // 최대 회전각 (45도)
-    if (progress < 0.15) {
-        // 0 -> 오른쪽 45도 가속/감속 스윙
-        return max * (1 - Math.cos((progress / 0.15) * Math.PI)) / 2;
-    } else if (progress < 0.35) {
-        // 오른쪽 정점에서 파츠가 떨어지도록 멈춤 대기 (20% 시간)
-        return max;
-    } else if (progress < 0.65) {
-        // 오른쪽 45도 -> 왼쪽 -45도 반대편으로 빠르게 스윙
-        return max - (max * 2) * (1 - Math.cos(((progress - 0.35) / 0.30) * Math.PI)) / 2;
-    } else if (progress < 0.85) {
-        // 왼쪽 정점에서 파츠가 떨어지도록 멈춤 대기 (20% 시간)
-        return -max;
-    } else {
-        // 왼쪽 -45도 -> 0도 원위치 복귀
-        return -max + max * (1 - Math.cos(((progress - 0.85) / 0.15) * Math.PI)) / 2;
-    }
+    const max = Math.PI / 3;
+    
+    let t = progress + 0.078 * Math.sin(progress * Math.PI * 4);
+    
+    return max * Math.sin(t * Math.PI * 2);
 }
 
 
@@ -893,10 +881,10 @@ document.getElementById('btnExportAPNG').addEventListener('click', async () => {
     
     // 사용자가 설정한 속도를 바탕으로 소요 시간 도출
     let recSpeed = origSpeed > 0 ? origSpeed : 4; 
-    const durationSec = currentTab === 'shaker' ? 3.0 : ((Math.PI * 2) / (recSpeed * 0.6));
+    const durationSec = currentTab === 'shaker' ? 4.5 : ((Math.PI * 2) / (recSpeed * 0.6));
     
-    // 20프레임 주기로 유동적 프레임 수 생성 (속도가 느릴수록 장수가 많아짐)
-    const totalFrames = currentTab === 'shaker' ? 60 : Math.round(durationSec * 20); 
+    // 20프레임 주기로 유동적 프레임 수 생성 (쉐이커는 4.5초 * 20fps = 90프레임)
+    const totalFrames = currentTab === 'shaker' ? 90 : Math.round(durationSec * 20); 
     const frameDelay = 50; // 고정 딜레이 (50ms = 20 FPS)
 
     showLoading(`APNG 프레임을 캡처 중입니다... (총 ${totalFrames}프레임)`);
@@ -955,8 +943,8 @@ document.getElementById('btnExportGIF').addEventListener('click', () => {
     document.getElementById('rotationSpeed').value = 0;
     
     let recSpeed = origSpeed > 0 ? origSpeed : 4; 
-    const durationSec = currentTab === 'shaker' ? 3.0 : ((Math.PI * 2) / (recSpeed * 0.6));
-    const totalFrames = currentTab === 'shaker' ? 60 : Math.round(durationSec * 20); 
+    const durationSec = currentTab === 'shaker' ? 4.5 : ((Math.PI * 2) / (recSpeed * 0.6));
+    const totalFrames = currentTab === 'shaker' ? 90 : Math.round(durationSec * 20); 
     const frameDelay = 50; 
 
     showLoading(`GIF 생성 중... 창을 유지해 주세요.`);
